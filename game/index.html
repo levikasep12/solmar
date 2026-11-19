@@ -3,17 +3,218 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>SOLMAR — a coastal crime sandbox</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
+  :root {
+    --gold: #ffc95e;
+    --gold-dim: #c79a45;
+    --ink: #14100c;
+    --panel: rgba(18, 14, 11, 0.62);
+    --panel-strong: rgba(14, 11, 9, 0.86);
+    --line: rgba(255, 210, 140, 0.22);
+    --text: #f6ead6;
+    --muted: #bda98d;
+    --danger: #ff5d4a;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0907; font-family: var(--font); color: var(--text); }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+
+  .hidden { display: none !important; }
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 30; }
+  .dim { background: radial-gradient(120% 90% at 50% 40%, rgba(10, 7, 5, 0.35), rgba(8, 6, 4, 0.86)); }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-variant-numeric: tabular-nums; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(3px); }
+  #hud-top-left { position: absolute; top: 16px; left: 18px; display: flex; flex-direction: column; gap: 8px; }
+  #cash { font-size: 30px; font-weight: 800; letter-spacing: 0.02em; color: var(--gold); text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+  #clock { font-size: 13px; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; }
+  #hud-top-right { position: absolute; top: 16px; right: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  #stars { display: flex; gap: 3px; font-size: 26px; line-height: 1; text-shadow: 0 2px 8px rgba(0,0,0,0.7); }
+  #stars span { color: rgba(255,255,255,0.18); transition: color 0.15s; }
+  #stars span.lit { color: var(--gold); }
+  #health-wrap { width: 190px; padding: 6px 8px; }
+  #health-label { font-size: 10px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+  #health-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.12); overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #8fd06a, #d7e06a); transition: width 0.2s, background 0.2s; }
+
+  #minimap-wrap { position: absolute; left: 18px; bottom: 18px; width: 196px; height: 196px; padding: 6px; }
+  #minimap { width: 184px; height: 184px; display: block; border-radius: 8px; }
+
+  #objective { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); max-width: 46vw; padding: 9px 18px; text-align: center; font-size: 14px; letter-spacing: 0.03em; }
+  #objective .label { display: block; font-size: 10px; letter-spacing: 0.2em; color: var(--gold-dim); text-transform: uppercase; margin-bottom: 3px; }
+  #objective .timer { color: var(--gold); font-weight: 700; }
+
+  #speedo { position: absolute; right: 18px; bottom: 18px; padding: 8px 16px; text-align: right; min-width: 120px; }
+  #speed-value { font-size: 34px; font-weight: 800; line-height: 1; color: #fff; }
+  #speed-unit { font-size: 10px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; }
+  #weapon { position: absolute; right: 18px; bottom: 92px; font-size: 12px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; text-align: right; }
+  #weapon b { color: var(--gold); }
+
+  #toast { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); padding: 8px 20px; font-size: 14px; color: var(--gold); opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+  #toast.show { opacity: 1; }
+  #subtitle { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); max-width: 60vw; padding: 10px 20px; font-size: 15px; line-height: 1.35; text-align: center; color: #fdf3df; opacity: 0; transition: opacity 0.3s; }
+  #subtitle.show { opacity: 1; }
+  #subtitle .who { color: var(--gold); font-weight: 700; }
+
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0; transition: opacity 0.35s; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 45%, rgba(150,10,10,0.72) 100%); }
+  #flash { position: fixed; inset: 0; pointer-events: none; z-index: 11; background: #fff; opacity: 0; }
+
+  /* ---------- title ---------- */
+  #title { background: linear-gradient(100deg, rgba(12,9,6,0.9) 0%, rgba(12,9,6,0.55) 42%, rgba(12,9,6,0.05) 70%, rgba(12,9,6,0.35) 100%); justify-content: flex-start; padding-left: 7vw; }
+  #title-inner { max-width: 620px; }
+  .kicker { font-size: 12px; letter-spacing: 0.42em; color: var(--gold); text-transform: uppercase; margin-bottom: 6px; }
+  #title h1 { margin: 0; font-size: clamp(64px, 11vw, 148px); line-height: 0.86; letter-spacing: 0.04em; font-weight: 900; color: #fff6e2; text-shadow: 0 6px 40px rgba(255,160,60,0.35), 0 2px 0 rgba(0,0,0,0.4); }
+  #title h1 em { font-style: normal; color: var(--gold); }
+  .tagline { margin: 12px 0 22px; font-size: 16px; color: var(--muted); max-width: 460px; line-height: 1.45; }
+  .menu { display: flex; flex-direction: column; gap: 9px; max-width: 300px; }
+  .menu button {
+    font-family: var(--font); text-align: left; cursor: pointer; color: var(--text);
+    background: rgba(20,15,11,0.72); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 18px; font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  }
+  .menu button:hover { background: rgba(255,190,90,0.16); border-color: var(--gold); transform: translateX(3px); }
+  .menu button.primary { background: var(--gold); color: #221708; border-color: var(--gold); font-weight: 800; }
+  .menu button.primary:hover { background: #ffd98a; }
+  .controls { margin-top: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 22px; font-size: 12px; color: var(--muted); max-width: 470px; }
+  .controls b { color: var(--text); font-weight: 600; }
+  .hint { margin-top: 16px; font-size: 11px; color: rgba(255,255,255,0.4); letter-spacing: 0.08em; }
+
+  /* ---------- modal screens ---------- */
+  .card { background: var(--panel-strong); border: 1px solid var(--line); border-radius: 14px; padding: 30px 38px; min-width: 380px; max-width: 560px; text-align: center; box-shadow: 0 24px 80px rgba(0,0,0,0.6); }
+  .card h2 { margin: 0 0 6px; font-size: 40px; letter-spacing: 0.08em; color: #fff4e0; }
+  .card h2.fail { color: var(--danger); }
+  .card p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 6px 0; }
+  .card .big { font-size: 30px; color: var(--gold); font-weight: 800; margin: 12px 0; }
+  .card .row { display: flex; gap: 10px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .card button { font-family: var(--font); cursor: pointer; padding: 11px 20px; border-radius: 8px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; background: rgba(255,255,255,0.07); color: var(--text); border: 1px solid var(--line); }
+  .card button:hover { border-color: var(--gold); color: var(--gold); }
+  .card button.primary { background: var(--gold); color: #221708; border-color: var(--gold); font-weight: 700; }
+  .stats-table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 14px; }
+  .stats-table td { padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .stats-table td:first-child { text-align: left; color: var(--muted); letter-spacing: 0.04em; }
+  .stats-table td:last-child { text-align: right; color: var(--gold); font-weight: 700; }
+  #help .card { max-width: 640px; }
+  #help ul { text-align: left; color: var(--muted); font-size: 13px; line-height: 1.7; padding-left: 18px; }
+  #help b { color: var(--text); }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  @media (max-width: 900px) { #title { padding-left: 5vw; } .controls { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="SOLMAR: an open-world coastal city where Mara Voss drives, walks and runs jobs"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="hud-top-left">
+    <div id="cash">$0</div>
+    <div id="clock">18:40 · SOLMAR</div>
+  </div>
+  <div id="hud-top-right">
+    <div id="stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
+    <div id="health-wrap" class="panel">
+      <div id="health-label">Health</div>
+      <div id="health-bar"><div id="health-fill"></div></div>
+    </div>
+  </div>
+  <div id="objective" class="panel hidden"><span class="label">Objective</span><span id="objective-text"></span></div>
+  <div id="minimap-wrap" class="panel"><canvas id="minimap" width="368" height="368"></canvas></div>
+  <div id="weapon">Weapon <b id="weapon-name">Fists</b></div>
+  <div id="speedo" class="panel hidden"><div id="speed-value">0</div><div id="speed-unit">km/h</div></div>
+  <div id="toast" class="panel"></div>
+  <div id="subtitle" class="panel"></div>
+</div>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<section id="title" class="screen">
+  <div id="title-inner">
+    <div class="kicker">A coastal crime sandbox</div>
+    <h1>SOL<em>MAR</em></h1>
+    <p class="tagline">Golden hour on the coast. Mara Voss drives for hire — and the whole city is on the meter.</p>
+    <div class="menu">
+      <button id="btn-play" class="primary">Play</button>
+      <button id="btn-continue">Continue</button>
+      <button id="btn-help">How to play</button>
+      <button id="btn-stats">Stats</button>
+    </div>
+    <div class="controls">
+      <div><b>WASD</b> walk / drive</div>
+      <div><b>Shift</b> sprint</div>
+      <div><b>Space</b> jump / handbrake</div>
+      <div><b>E</b> enter / exit car</div>
+      <div><b>F</b> carjack</div>
+      <div><b>Mouse drag</b> orbit camera</div>
+      <div><b>Click</b> punch / shoot</div>
+      <div><b>1 / 2</b> fists / pistol</div>
+      <div><b>Esc</b> pause</div>
+      <div><b>M</b> mute</div>
+    </div>
+    <div class="hint">Seeded city: add ?seed=N to the address for a different Solmar.</div>
+  </div>
+</section>
+
+<section id="help" class="screen dim hidden">
+  <div class="card">
+    <h2>HOW TO PLAY</h2>
+    <ul>
+      <li><b>On foot:</b> WASD to walk, Shift to sprint, Space to jump. Left click punches.</li>
+      <li><b>Cars:</b> E enters a parked or stopped car, F carjacks a moving one. W/S throttle and brake, A/D steer, Space handbrake.</li>
+      <li><b>Camera:</b> drag with the mouse to orbit; it eases back behind the car while you drive. Wheel zooms.</li>
+      <li><b>Missions:</b> drive to a gold marker to start a job. Follow the objective text and the waypoint on the minimap.</li>
+      <li><b>Wanted:</b> crimes raise your stars. Stay out of sight to cool down, or clear them at the Spray Shop on the minimap.</li>
+      <li><b>Combat:</b> 2 draws the pistol (limited ammo, pickups glow around town), 1 returns to fists. Health reaches zero: you wake at the hospital.</li>
+      <li><b>Side work:</b> taxi fares, the checkpoint time trial, and ten hidden packages around the city.</li>
+    </ul>
+    <div class="row"><button id="btn-help-back" class="primary">Back</button></div>
+  </div>
+</section>
+
+<section id="pause" class="screen dim hidden">
+  <div class="card">
+    <h2>PAUSED</h2>
+    <p>Solmar waits. The meter does not.</p>
+    <div class="row">
+      <button id="btn-resume" class="primary">Resume</button>
+      <button id="btn-stats-pause">Stats</button>
+      <button id="btn-quit">Quit to title</button>
+    </div>
+  </div>
+</section>
+
+<section id="gameover" class="screen dim hidden">
+  <div class="card">
+    <h2 class="fail">WASTED</h2>
+    <p>Mara wakes up at Solmar General, lighter in the wallet.</p>
+    <div class="big" id="gameover-loss">-$200</div>
+    <div class="row"><button id="btn-hospital" class="primary">Get back out there</button></div>
+  </div>
+</section>
+
+<section id="missiondone" class="screen dim hidden">
+  <div class="card">
+    <h2 id="missiondone-title">MISSION COMPLETE</h2>
+    <p id="missiondone-sub"></p>
+    <div class="big" id="missiondone-cash">+$0</div>
+    <div class="row"><button id="btn-missiondone" class="primary">Continue</button></div>
+  </div>
+</section>
+
+<section id="stats" class="screen dim hidden">
+  <div class="card">
+    <h2>SOLMAR STATS</h2>
+    <table class="stats-table" id="stats-table"></table>
+    <div class="row"><button id="btn-stats-back" class="primary">Back</button></div>
+  </div>
+</section>
+
 <p id="status" role="status" aria-live="polite"></p>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
